@@ -9,7 +9,8 @@ OpenDeck device plugin that turns the MacBook Touch Bar into a deck on Asahi Lin
 - The plugin connects to OpenDeck and registers its 16-key device (seen in the plugin log).
 - The udev rules output (the permanent form of that access) is tested and works.
 - Not yet tested: backlight/idle dimming behaviour, wake from suspend.
-- OpenDeck comes from `github:missmoode/nix-opendeck` (patched to load plugins from the Nix store; also provides the home-manager module). `.#opendeck` re-exports its package; it builds and runs on aarch64 (2.14.2), and the plugin loads through its home-manager module as a store symlink (confirmed on yuriBook).
+- OpenDeck comes from `github:missmoode/nix-opendeck` (patched to load plugins from the Nix store; also provides the home-manager module). It builds and runs on aarch64 (2.14.2), and the plugin loads through its home-manager module as a store symlink (confirmed on yuriBook).
+- `.#opendeck` is nix-opendeck's core plus our frontend patch (`nix/opendeck.nix`, two `substituteInPlace` calls): keys of `tb-` devices render on a 327x144 canvas (3x the 109x48 button) with the icon kept square, so background colours fill the button. OpenDeck's "solid colour" button stores a 1x1 image override rather than a background colour, so 1x1 images are stretched over the whole canvas. Users opt in with `programs.opendeck.package`. Not yet verified on hardware.
 - The `opendeck` input's nixpkgs must follow ours/the system's: the webview aborts with `Could not create default EGL display: EGL_BAD_PARAMETER` when its glibc is older than the system Mesa's (seen with an older pin).
 - OpenDeck's panic at `src/main.rs:271` on startup is its update check hitting the GitHub rate limit; harmless.
 
@@ -38,7 +39,7 @@ OpenDeck device plugin that turns the MacBook Touch Bar into a deck on Asahi Lin
 - OpenDeck launches the binary with `-port -pluginUUID -registerEvent -info`; `openaction::run(args)` handles the websocket. Handlers come from one `GlobalEventHandler` set with `set_global_event_handler` before `run`.
 - `device_plugin::register_device(id, name, rows, columns, encoders, type)`; `type` is not interpreted (0). Keys are addressed by linear position. `key_down` / `key_up` / `unregister_device` take the device id.
 - The first two characters of the device id must equal the manifest `DeviceNamespace` (`tb`; device id `tb-touchbar`).
-- `device_plugin_set_image`: `image` is a `data:image/jpeg;base64` URL of a 144x144 key. `image: None` clears one key; `position: None` clears the whole device. `controller` is `Keypad`, `Encoder` or `Infobar`.
+- `device_plugin_set_image`: `image` is a `data:image/jpeg;base64` URL of a 144x144 key (327x144 with our patched OpenDeck; the size is whatever the key canvas in OpenDeck's window is, there is no protocol field for it). The plugin fits any aspect into the button. `image: None` clears one key; `position: None` clears the whole device. `controller` is `Keypad`, `Encoder` or `Infobar`.
 - `device_plugin_set_brightness`: percentage.
 - Images can arrive immediately after registration, so the bar must be ready first.
 - Manifest: `Actions: []`, `OS: [{Platform: linux}]`, `CodePathLin`, and `CodePaths` keyed by Rust target triple (`aarch64-unknown-linux-gnu`).
@@ -52,4 +53,5 @@ OpenDeck device plugin that turns the MacBook Touch Bar into a deck on Asahi Lin
 - `src/layout.rs` key grid (`COLS = 16`, one row); `src/demo.rs` hardware test; `src/plugin.rs` OpenDeck glue.
 - `assets/` holds `manifest.json` and the icon; its contents become the root of the plugin directory.
 - `nix/package.nix` builds the plugin with nix-opendeck's `mkRustOpenDeckPlugin`: output `$out/opendeck-touchbar.sdPlugin/` (plus a `bin/` link for `--demo`), `passthru.pluginId`, and `passthru.udev` from `nix/udev-rules.nix`.
+- `nix/opendeck.nix` wraps a patched `opendeck-core` with nix-opendeck's `wrapOpenDeck` (starterpack bundled, like upstream's default).
 - This repo ships no NixOS or home-manager module. Users take `programs.opendeck` from `github:missmoode/nix-opendeck`, add `<plugin>.udev` to `services.udev.packages`, declare the `touchbar` group and turn `hardware.apple.touchBar.enable` off (see README.org).

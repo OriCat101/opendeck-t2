@@ -45,6 +45,7 @@ pub struct Bar {
     layout: Layout,
     keys: Vec<Option<RgbImage>>,
     pressed: Vec<bool>,
+    image_size: Option<(u32, u32)>,
     flip: bool,
     level: u32,
     power: Power,
@@ -69,6 +70,7 @@ impl Bar {
             layout,
             keys: vec![None; layout.cols as usize],
             pressed: vec![false; layout.cols as usize],
+            image_size: None,
             flip,
             level,
             power: Power::Active,
@@ -89,8 +91,19 @@ impl Bar {
         }
         let (_, w) = self.layout.cell(key);
         let (bw, bh) = self.button_size(w);
-        let side = bw.min(bh).max(1);
-        self.keys[key as usize] = Some(imageops::resize(image, side, side, FilterType::Triangle));
+        let (iw, ih) = image.dimensions();
+        if self.image_size != Some((iw, ih)) {
+            self.image_size = Some((iw, ih));
+            log::info!("key images are {iw}x{ih}, buttons are {bw}x{bh}");
+        }
+        let scale = (bw as f32 / iw.max(1) as f32).min(bh as f32 / ih.max(1) as f32);
+        let fit = |v: u32| ((v as f32 * scale).round() as u32).max(1);
+        self.keys[key as usize] = Some(imageops::resize(
+            image,
+            fit(iw),
+            fit(ih),
+            FilterType::Triangle,
+        ));
         self.render(key)
     }
 

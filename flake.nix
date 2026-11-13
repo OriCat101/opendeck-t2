@@ -33,6 +33,7 @@
       packages = forEachSystem (
         pkgs:
         let
+          inherit (pkgs.stdenv.hostPlatform) system;
           opendeck-touchbar = pkgs.callPackage ./nix/package.nix {
             mkRustOpenDeckPlugin = opendeck.lib.mkRustOpenDeckPlugin pkgs;
           };
@@ -40,7 +41,11 @@
         {
           inherit opendeck-touchbar;
           default = opendeck-touchbar;
-          inherit (opendeck.packages.${pkgs.stdenv.hostPlatform.system}) opendeck;
+          opendeck = import ./nix/opendeck.nix {
+            inherit (opendeck.packages.${system}) opendeck-core;
+            inherit (opendeck.legacyPackages.${system}) wrapOpenDeck;
+            plugins = [ opendeck.legacyPackages.${system}.opendeck-plugins.nekename.starterpack ];
+          };
         }
       );
 

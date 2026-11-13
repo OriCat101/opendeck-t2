@@ -104,6 +104,18 @@ Home-manager (OpenDeck itself and the plugin):
 
 See the nix-opendeck README for the module's other options (settings, reload and restart behaviour, more plugins).
 
+** Full-width keys
+
+OpenDeck renders every key as a 144x144 square, so on the wide Touch Bar buttons a background colour only covers a square in the middle. This flake's =opendeck= package is nix-opendeck's OpenDeck with a small frontend patch that renders Touch Bar keys at the buttons' proportions (327x144), so backgrounds fill the whole button and titles get more room:
+
+#+begin_src nix
+programs.opendeck.package = inputs.opendeck-touchbar.packages.${pkgs.stdenv.hostPlatform.system}.opendeck;
+#+end_src
+
+This builds OpenDeck locally. In the OpenDeck window the Touch Bar's keys are then shown wide as well. Without the patch everything still works, with square images.
+
+The patch is a stopgap: it hardcodes the Touch Bar's device namespace and key size in OpenDeck's frontend. It should probably be upstreamed at some point, as a way for device plugins to tell OpenDeck their key size when registering a device.
+
 ** With an unpatched OpenDeck
 
 A stock OpenDeck changes the plugin binary's permissions on start, so a link into the Nix store does not work there. =nix run .#install= copies the plugin into =~/.config/opendeck/plugins= instead.
