@@ -47,7 +47,7 @@ OpenDeck device plugin that turns the MacBook Touch Bar into a deck on Asahi Lin
 
 ## Code map
 
-- `src/bar/display.rs` DRM setup and rotated drawing; `src/bar/touch.rs` evdev slots to touch events; `src/bar/backlight.rs`; `src/bar/mod.rs` the `Bar` (keys, brightness, idle power) and `start()` which yields `KeyEvent`s.
+- `src/bar/display.rs` DRM setup and rotated drawing; `src/bar/touch.rs` evdev slots to touch events; `src/bar/backlight.rs`; `src/bar/mod.rs` the `Bar` (keys drawn as tiny-dfr style rounded buttons with press highlight, brightness, idle power) and `start()` which yields `KeyEvent`s.
 - `src/layout.rs` key grid (`COLS = 16`, one row); `src/demo.rs` hardware test; `src/plugin.rs` OpenDeck glue.
 - `assets/` holds `manifest.json` and the icon; its contents become the root of the plugin directory.
 - `nix/package.nix` builds the plugin with nix-opendeck's `mkRustOpenDeckPlugin`: output `$out/opendeck-touchbar.sdPlugin/` (plus a `bin/` link for `--demo`), `passthru.pluginId`, and `passthru.udev` from `nix/udev-rules.nix`.

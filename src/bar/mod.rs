@@ -20,6 +20,12 @@ const DIM_AFTER: Duration = Duration::from_secs(30);
 const OFF_AFTER: Duration = Duration::from_secs(60);
 const DIMMED_LEVEL: u32 = 1;
 
+const SPACING: u32 = 16;
+const INSET: u32 = 6;
+const RADIUS: f32 = 8.0;
+const FILL: u8 = 51;
+const FILL_PRESSED: u8 = 102;
+
 #[derive(Debug, Clone, Copy)]
 pub enum KeyEvent {
     Down(u8),
@@ -37,6 +43,8 @@ pub struct Bar {
     display: Display,
     backlight: Option<Backlight>,
     layout: Layout,
+    keys: Vec<Option<RgbImage>>,
+    pressed: Vec<bool>,
     flip: bool,
     level: u32,
     power: Power,
@@ -54,10 +62,13 @@ impl Bar {
             .inspect_err(|e| log::warn!("backlight control unavailable: {e:#}"))
             .ok();
         let level = backlight.as_ref().map_or(0, |b| b.max() / 2);
+        let layout = Layout::new(width, height);
         let mut bar = Self {
             display,
             backlight,
-            layout: Layout::new(width, height),
+            layout,
+            keys: vec![None; layout.cols as usize],
+            pressed: vec![false; layout.cols as usize],
             flip,
             level,
             power: Power::Active,
@@ -76,33 +87,73 @@ impl Bar {
         if key >= self.layout.cols {
             return Ok(());
         }
-        let (x, w) = self.layout.cell(key);
-        let h = self.layout.height;
-        let side = w.min(h);
-        let scaled = imageops::resize(image, side, side, FilterType::Triangle);
-        let mut cell = RgbImage::new(w, h);
-        imageops::replace(
-            &mut cell,
-            &scaled,
-            ((w - side) / 2) as i64,
-            ((h - side) / 2) as i64,
-        );
-        self.display
-            .draw(x, 0, w, h, |px, py| cell.get_pixel(px, py).0)
+        let (_, w) = self.layout.cell(key);
+        let (bw, bh) = self.button_size(w);
+        let side = bw.min(bh).max(1);
+        self.keys[key as usize] = Some(imageops::resize(image, side, side, FilterType::Triangle));
+        self.render(key)
     }
 
     pub fn clear_key(&mut self, key: u8) -> Result<()> {
         if key >= self.layout.cols {
             return Ok(());
         }
-        let (x, w) = self.layout.cell(key);
-        self.display
-            .draw(x, 0, w, self.layout.height, |_, _| [0; 3])
+        self.keys[key as usize] = None;
+        self.render(key)
     }
 
     pub fn clear_all(&mut self) -> Result<()> {
+        self.keys.fill(None);
         self.display
             .draw(0, 0, self.layout.width, self.layout.height, |_, _| [0; 3])
+    }
+
+    pub fn set_pressed(&mut self, key: u8, pressed: bool) -> Result<()> {
+        if key >= self.layout.cols || self.pressed[key as usize] == pressed {
+            return Ok(());
+        }
+        self.pressed[key as usize] = pressed;
+        self.render(key)
+    }
+
+    fn button_size(&self, cell_width: u32) -> (u32, u32) {
+        (
+            cell_width.saturating_sub(SPACING),
+            self.layout.height.saturating_sub(2 * INSET),
+        )
+    }
+
+    /// Draw a key as a rounded button with its image blended into the fill.
+    fn render(&mut self, key: u8) -> Result<()> {
+        let (x, w) = self.layout.cell(key);
+        let h = self.layout.height;
+        let Some(image) = &self.keys[key as usize] else {
+            return self.display.draw(x, 0, w, h, |_, _| [0; 3]);
+        };
+        let fill = if self.pressed[key as usize] {
+            FILL_PRESSED
+        } else {
+            FILL
+        };
+        let (bw, bh) = self.button_size(w);
+        let (half_w, half_h) = (bw as f32 / 2.0, bh as f32 / 2.0);
+        let (cx, cy) = (w as f32 / 2.0, h as f32 / 2.0);
+        let radius = RADIUS.min(half_w).min(half_h);
+        let (iw, ih) = image.dimensions();
+        let (ix, iy) = (w.saturating_sub(iw) / 2, h.saturating_sub(ih) / 2);
+        self.display.draw(x, 0, w, h, |px, py| {
+            let qx = ((px as f32 + 0.5 - cx).abs() - (half_w - radius)).max(0.0);
+            let qy = ((py as f32 + 0.5 - cy).abs() - (half_h - radius)).max(0.0);
+            let coverage = (0.5 - (qx.hypot(qy) - radius)).clamp(0.0, 1.0);
+            if coverage == 0.0 {
+                return [0; 3];
+            }
+            let mut color = [fill; 3];
+            if (ix..ix + iw).contains(&px) && (iy..iy + ih).contains(&py) {
+                color = image.get_pixel(px - ix, py - iy).0.map(|v| v.max(fill));
+            }
+            color.map(|v| (v as f32 * coverage) as u8)
+        })
     }
 
     /// Brightness as a percentage.
@@ -184,18 +235,21 @@ pub fn start(bar: Bar) -> Result<(SharedBar, UnboundedReceiver<KeyEvent>)> {
         let mut held: HashMap<i32, u8> = HashMap::new();
         while let Some(touch) = touch_rx.recv().await {
             let was_off = touch_bar.lock().unwrap().activity();
-            let event = match touch {
+            let (event, key, pressed) = match touch {
                 Touch::Down { .. } if was_off => continue,
                 Touch::Down { slot, x } => {
                     let key = layout.key_at(if flip { 1.0 - x } else { x });
                     held.insert(slot, key);
-                    KeyEvent::Down(key)
+                    (KeyEvent::Down(key), key, true)
                 }
                 Touch::Up { slot } => match held.remove(&slot) {
-                    Some(key) => KeyEvent::Up(key),
+                    Some(key) => (KeyEvent::Up(key), key, false),
                     None => continue,
                 },
             };
+            if let Err(e) = touch_bar.lock().unwrap().set_pressed(key, pressed) {
+                log::warn!("drawing key press failed: {e:#}");
+            }
             if key_tx.send(event).is_err() {
                 break;
             }

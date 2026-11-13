@@ -19,15 +19,14 @@ const DIGITS: [[u8; 5]; 10] = [
     [0b111, 0b101, 0b111, 0b001, 0b111],
 ];
 
-fn key_image(key: u8, cols: u8, pressed: bool) -> RgbImage {
-    let (bg, fg) = if pressed {
-        ([255, 255, 255], [0, 0, 0])
-    } else if key == 0 {
-        ([0, 110, 0], [255, 255, 255])
+fn key_image(key: u8, cols: u8) -> RgbImage {
+    let fg = [255, 255, 255];
+    let bg = if key == 0 {
+        [0, 110, 0]
     } else if key == cols - 1 {
-        ([140, 0, 0], [255, 255, 255])
+        [140, 0, 0]
     } else {
-        ([40, 40, 40], [255, 255, 255])
+        [0, 0, 0]
     };
     let mut img = RgbImage::from_pixel(SIZE, SIZE, Rgb(bg));
     let text = key.to_string();
@@ -66,7 +65,7 @@ pub async fn run() -> Result<()> {
     );
     bar.set_brightness(100);
     for key in 0..layout.cols {
-        bar.set_key(key, &key_image(key, layout.cols, false))?;
+        bar.set_key(key, &key_image(key, layout.cols))?;
     }
     let (bar, mut keys) = bar::start(bar)?;
     println!("touch the keys; Ctrl-C to quit");
@@ -75,12 +74,10 @@ pub async fn run() -> Result<()> {
             _ = tokio::signal::ctrl_c() => break,
             event = keys.recv() => {
                 let Some(event) = event else { break };
-                let (key, pressed) = match event {
-                    KeyEvent::Down(key) => (key, true),
-                    KeyEvent::Up(key) => (key, false),
-                };
-                println!("{} {key}", if pressed { "down" } else { "up" });
-                bar.lock().unwrap().set_key(key, &key_image(key, layout.cols, pressed))?;
+                match event {
+                    KeyEvent::Down(key) => println!("down {key}"),
+                    KeyEvent::Up(key) => println!("up {key}"),
+                }
             }
         }
     }
