@@ -8,13 +8,14 @@ The plugin owns the Touch Bar directly and *replaces tiny-dfr*: there is no func
 
 Early. Developed and tested on a MacBookPro17,1 (M1 13") running NixOS.
 
-- Works: drawing, touch input, running without root, connecting to OpenDeck as a 1x16 key device.
-- Untested: the NixOS module, brightness and idle dimming, wake from suspend, other Touch Bar models (M2 13", Intel T2 Macs).
+- Works: drawing, touch input, running without root, connecting to OpenDeck as a 1x16 key device, loading through nix-opendeck's home-manager module, device access through the udev rules package.
+- Keys are drawn like tiny-dfr's: rounded grey buttons with the icon blended in, lighter while touched.
+- Untested: brightness and idle dimming, wake from suspend, other Touch Bar models (M2 13", Intel T2 Macs).
 
 * How it works
 
 - Display: the =adp= DRM card (60x2008, portrait) is driven with a dumb buffer; drawing is rotated to a 2008x60 landscape bar.
-- Touch: the =apple_z2= multitouch device is read through evdev and mapped to 16 equal key cells.
+- Touch: the =apple_z2= multitouch device is read through evdev and mapped to 16 equal key cells; each cell shows one rounded button.
 - Backlight: set from OpenDeck's brightness; the bar dims after 30 s without touch and turns off after 60 s (the panel is OLED). The first touch on a dark bar only wakes it.
 
 * Requirements
