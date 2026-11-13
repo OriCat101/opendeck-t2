@@ -10,7 +10,7 @@ Early. Developed and tested on a MacBookPro17,1 (M1 13") running NixOS.
 
 - Works: drawing, touch input, running without root, connecting to OpenDeck as a 1x16 key device, loading through nix-opendeck's home-manager module, device access through the udev rules package.
 - Keys are drawn like tiny-dfr's: rounded grey buttons with the icon blended in, lighter while touched.
-- Untested: brightness and idle dimming, wake from suspend, other Touch Bar models (M2 13", Intel T2 Macs).
+- Untested: other Touch Bar models (M2 13", Intel T2 Macs).
 
 * How it works
 
