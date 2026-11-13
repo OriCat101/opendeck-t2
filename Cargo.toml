@@ -1,0 +1,17 @@
+[package]
+name = "opendeck-touchbar"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "OpenDeck device plugin for the MacBook Touch Bar on Asahi Linux"
+
+[dependencies]
+anyhow = "1"
+data-url = "0.3"
+drm = "0.14"
+env_logger = "0.11"
+evdev = { version = "0.13", features = ["tokio"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+log = "0.4"
+openaction = "2.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }

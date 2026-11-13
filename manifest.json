@@ -1,0 +1,16 @@
+{
+  "Name": "MacBook Touch Bar",
+  "Author": "ori",
+  "Version": "0.1.0",
+  "Description": "Use the MacBook Touch Bar as a deck on Asahi Linux",
+  "Icon": "assets/icon",
+  "Category": "Hardware",
+  "OS": [{ "Platform": "linux" }],
+  "CodePathLin": "opendeck-touchbar",
+  "CodePaths": {
+    "aarch64-unknown-linux-gnu": "opendeck-touchbar",
+    "x86_64-unknown-linux-gnu": "opendeck-touchbar"
+  },
+  "Actions": [],
+  "DeviceNamespace": "tb"
+}
