@@ -30,10 +30,10 @@
       packages = forEachSystem (pkgs: rec {
         opendeck-touchbar = pkgs.callPackage ./nix/package.nix { };
         default = opendeck-touchbar;
-        opendeck =
-          opendeck-nix.inputs.nixpkgs.legacyPackages.${pkgs.stdenv.hostPlatform.system}.callPackage
-            "${opendeck-nix}/pkg/package.nix"
-            { };
+        # Built with our nixpkgs, not opendeck-nix's pin: the webview must share glibc with the system Mesa.
+        opendeck = (pkgs.callPackage "${opendeck-nix}/pkg/package.nix" { }).overrideAttrs (old: {
+          buildInputs = old.buildInputs ++ [ pkgs.libgit2 ];
+        });
       });
 
       apps = forEachSystem (
