@@ -3,7 +3,7 @@
   "Author": "ori",
   "Version": "0.1.0",
   "Description": "Use the MacBook Touch Bar as a deck on Asahi Linux",
-  "Icon": "assets/icon",
+  "Icon": "icon",
   "Category": "Hardware",
   "OS": [{ "Platform": "linux" }],
   "CodePathLin": "opendeck-touchbar",

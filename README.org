@@ -47,28 +47,65 @@ A "Touch Bar" device with 1x16 keys should appear. =sudo systemctl start tiny-df
 
 * NixOS
 
-Add the flake as an input, import its module and give your user access:
+This repo ships no module of its own. OpenDeck, its home-manager module and store-based plugin loading come from [[https://github.com/missmoode/nix-opendeck][missmoode/nix-opendeck]]; this flake provides the plugin package in the layout that module expects, plus the udev rules as its =udev= output.
+
+Flake inputs:
 
 #+begin_src nix
 {
-  imports = [ inputs.opendeck-touchbar.nixosModules.default ];
-
-  hardware.opendeckTouchBar = {
-    enable = true;
-    users = [ "alice" ];
+  opendeck = {
+    url = "github:missmoode/nix-opendeck";
+    inputs.nixpkgs.follows = "nixpkgs";
   };
+  opendeck-touchbar = {
+    url = "github:OriCat101/opendeck-t2";
+    inputs.nixpkgs.follows = "nixpkgs";
+    inputs.opendeck.follows = "opendeck";
+  };
+}
+#+end_src
+
+Let =nixpkgs= follow yours. OpenDeck's webview has to be built against the same glibc as your system's Mesa, otherwise it aborts with =Could not create default EGL display=. Do not make nix-opendeck's =deno-nixpkgs= input follow anything.
+
+System configuration (device access, and tiny-dfr off):
+
+#+begin_src nix
+{ inputs, pkgs, ... }:
+let
+  touchbar = inputs.opendeck-touchbar.packages.${pkgs.stdenv.hostPlatform.system}.default;
+in
+{
+  services.udev.packages = [ touchbar.udev ];
+  users.groups.touchbar.members = [ "alice" ];
 
   hardware.apple.touchBar.enable = false; # tiny-dfr
 }
 #+end_src
 
-The module adds a =touchbar= group with access to the display, the touch device and the backlight, and keeps the compositor away from the Touch Bar (the udev seat rules tiny-dfr normally ships). Log out and back in after rebuilding.
+The rules give the =touchbar= group access to the display, the touch device and the backlight, and keep the compositor away from the Touch Bar (the seat rules tiny-dfr normally ships). Log out and back in after rebuilding so the group applies.
 
-The plugin itself still has to be copied into OpenDeck's plugin directory with =nix run .#install=: OpenDeck changes the binary's permissions on start, so a link into the Nix store does not work.
+Home-manager (OpenDeck itself and the plugin):
 
-** OpenDeck on aarch64
+#+begin_src nix
+{ inputs, pkgs, ... }:
+{
+  imports = [ inputs.opendeck.homeManagerModules.default ];
 
-=.#opendeck= builds OpenDeck from [[https://github.com/Kitt3120/opendeck-nix][Kitt3120/opendeck-nix]] for aarch64 against this flake's nixpkgs. Building it against an older nixpkgs than your system's makes its webview abort with =Could not create default EGL display=.
+  programs.opendeck = {
+    enable = true;
+    plugins = [
+      inputs.opendeck-touchbar.packages.${pkgs.stdenv.hostPlatform.system}.default
+    ];
+    settings.updatecheck = false;
+  };
+}
+#+end_src
+
+See the nix-opendeck README for the module's other options (settings, reload and restart behaviour, more plugins).
+
+** With an unpatched OpenDeck
+
+A stock OpenDeck changes the plugin binary's permissions on start, so a link into the Nix store does not work there. =nix run .#install= copies the plugin into =~/.config/opendeck/plugins= instead.
 
 * Development
 

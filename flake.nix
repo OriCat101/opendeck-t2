@@ -7,8 +7,11 @@
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # No nixpkgs follows: its fixed-output hashes depend on its own pin.
-    opendeck-nix.url = "github:Kitt3120/opendeck-nix";
+    # nixpkgs must follow: OpenDeck's webview has to share glibc with the system Mesa.
+    opendeck = {
+      url = "github:missmoode/nix-opendeck";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -16,7 +19,7 @@
       self,
       nixpkgs,
       treefmt-nix,
-      opendeck-nix,
+      opendeck,
     }:
     let
       systems = [
@@ -27,14 +30,19 @@
       treefmtEval = forEachSystem (pkgs: treefmt-nix.lib.evalModule pkgs ./treefmt.nix);
     in
     {
-      packages = forEachSystem (pkgs: rec {
-        opendeck-touchbar = pkgs.callPackage ./nix/package.nix { };
-        default = opendeck-touchbar;
-        # Built with our nixpkgs, not opendeck-nix's pin: the webview must share glibc with the system Mesa.
-        opendeck = (pkgs.callPackage "${opendeck-nix}/pkg/package.nix" { }).overrideAttrs (old: {
-          buildInputs = old.buildInputs ++ [ pkgs.libgit2 ];
-        });
-      });
+      packages = forEachSystem (
+        pkgs:
+        let
+          opendeck-touchbar = pkgs.callPackage ./nix/package.nix {
+            mkRustOpenDeckPlugin = opendeck.lib.mkRustOpenDeckPlugin pkgs;
+          };
+        in
+        {
+          inherit opendeck-touchbar;
+          default = opendeck-touchbar;
+          inherit (opendeck.packages.${pkgs.stdenv.hostPlatform.system}) opendeck;
+        }
+      );
 
       apps = forEachSystem (
         pkgs:
@@ -46,7 +54,7 @@
               dest="''${XDG_CONFIG_HOME:-$HOME/.config}/opendeck/plugins/opendeck-touchbar.sdPlugin"
               mkdir -p "$(dirname "$dest")"
               rm -rf "$dest"
-              cp -rL --no-preserve=mode,ownership ${plugin}/share/opendeck-touchbar/opendeck-touchbar.sdPlugin "$dest"
+              cp -rL --no-preserve=mode,ownership ${plugin}/opendeck-touchbar.sdPlugin "$dest"
               chmod 0755 "$dest/opendeck-touchbar"
               echo "installed to $dest"
             '';
@@ -81,7 +89,5 @@
           RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
         };
       });
-
-      nixosModules.default = import ./nix/module.nix;
     };
 }

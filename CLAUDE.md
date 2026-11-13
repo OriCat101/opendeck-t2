@@ -7,8 +7,9 @@ OpenDeck device plugin that turns the MacBook Touch Bar into a deck on Asahi Lin
 - `--demo` (numbered keys, prints touches) verified on hardware as root with tiny-dfr stopped: display, orientation, key layout and touch mapping are correct without `OPENDECK_TOUCHBAR_FLIP`.
 - Non-root works: with tiny-dfr stopped and the device nodes owned by the user, the demo and the plugin take the display without root (first opener becomes DRM master). Ad-hoc setup until reboot: `sudo chown ori /dev/dri/card2 /dev/input/event3 /sys/class/backlight/228600000.dsi.0/brightness`.
 - The plugin connects to OpenDeck and registers its 16-key device (seen in the plugin log).
-- Not yet tested: `nix/module.nix` (the permanent form of that access), backlight/idle dimming behaviour, wake from suspend.
-- OpenDeck is not installed system-wide; `.#opendeck` builds `github:Kitt3120/opendeck-nix`'s package for aarch64. It must be built with this flake's nixpkgs, not opendeck-nix's pin: the webview aborts with `Could not create default EGL display: EGL_BAD_PARAMETER` when its glibc is older than the system Mesa's. The fixed-output hashes still match; the newer nixpkgs needs `libgit2` added to `buildInputs`.
+- Not yet tested: the udev rules output (the permanent form of that access), backlight/idle dimming behaviour, wake from suspend.
+- OpenDeck comes from `github:missmoode/nix-opendeck` (patched to load plugins from the Nix store; also provides the home-manager module). `.#opendeck` re-exports its package; it builds on aarch64 (2.14.2). Running it and loading the plugin through its home-manager module is not yet tested.
+- The `opendeck` input's nixpkgs must follow ours/the system's: the webview aborts with `Could not create default EGL display: EGL_BAD_PARAMETER` when its glibc is older than the system Mesa's (seen with an older pin).
 - OpenDeck's panic at `src/main.rs:271` on startup is its update check hitting the GitHub rate limit; harmless.
 
 ## Build and check
@@ -28,7 +29,7 @@ OpenDeck device plugin that turns the MacBook Touch Bar into a deck on Asahi Lin
 - Touch: evdev device named `MacBookPro17,1 Touch Bar` (driver `apple_z2`, currently `event3`), MT slots, `ABS_MT_POSITION_X` 0..23044 runs along the bar left to right. The device is grabbed.
 - Backlight: `/sys/class/backlight/228600000.dsi.0/brightness`, 0..255, root-writable by default. The panel is OLED, hence dim after 30 s and off after 60 s without touch.
 - The adp driver refuses opens from processes whose name starts with `X`.
-- Both devices carry `ID_SEAT=seat-touchbar` from udev rules shipped with tiny-dfr; that keeps the compositor off them. `nix/module.nix` re-ships those rules (they vanish when tiny-dfr is disabled) and grants the `touchbar` group access.
+- Both devices carry `ID_SEAT=seat-touchbar` from udev rules shipped with tiny-dfr; that keeps the compositor off them. `nix/udev-rules.nix` re-ships those rules (they vanish when tiny-dfr is disabled) and grants the `touchbar` group access.
 - T2 Macs use a different stack (`appletbdrm`, `hid-appletb-*`); driver names are listed in the code but nothing there is tested.
 
 ## OpenDeck device plugin protocol (OpenDeck 2.14, `openaction` 2.8)
@@ -40,7 +41,7 @@ OpenDeck device plugin that turns the MacBook Touch Bar into a deck on Asahi Lin
 - `device_plugin_set_brightness`: percentage.
 - Images can arrive immediately after registration, so the bar must be ready first.
 - Manifest: `Actions: []`, `OS: [{Platform: linux}]`, `CodePathLin`, and `CodePaths` keyed by Rust target triple (`aarch64-unknown-linux-gnu`).
-- Plugins live in `~/.config/opendeck/plugins/<dir>`; the directory name is the plugin UUID. OpenDeck `chmod 0755`s the binary before launch, so it must be a real user-owned file: copy it, do not symlink into the Nix store (`nix run .#install` does this).
+- Plugins live in `~/.config/opendeck/plugins/<dir>`; the directory name is the plugin UUID. A stock OpenDeck `chmod 0755`s the binary before launch and refuses to serve plugin assets outside the config dir, so there the plugin must be a real user-owned copy (`nix run .#install`). nix-opendeck's patched OpenDeck loads plugins as symlinks into the Nix store.
 - Plugin logs: `~/.local/share/opendeck/logs/plugins/opendeck-touchbar.sdPlugin.log`.
 - Reference plugin on openaction 2.x: `ambiso/opendeck-akp05`. `4ndv/opendeck-akp03` is still on the incompatible 1.x API.
 
@@ -48,4 +49,6 @@ OpenDeck device plugin that turns the MacBook Touch Bar into a deck on Asahi Lin
 
 - `src/bar/display.rs` DRM setup and rotated drawing; `src/bar/touch.rs` evdev slots to touch events; `src/bar/backlight.rs`; `src/bar/mod.rs` the `Bar` (keys, brightness, idle power) and `start()` which yields `KeyEvent`s.
 - `src/layout.rs` key grid (`COLS = 16`, one row); `src/demo.rs` hardware test; `src/plugin.rs` OpenDeck glue.
-- `nix/package.nix` builds the binary and the `.sdPlugin` directory; `nix/module.nix` is the NixOS module (`hardware.opendeckTouchBar.{enable,users}`), which asserts that `hardware.apple.touchBar.enable` is off.
+- `assets/` holds `manifest.json` and the icon; its contents become the root of the plugin directory.
+- `nix/package.nix` builds the plugin with nix-opendeck's `mkRustOpenDeckPlugin`: output `$out/opendeck-touchbar.sdPlugin/` (plus a `bin/` link for `--demo`), `passthru.pluginId`, and `passthru.udev` from `nix/udev-rules.nix`.
+- This repo ships no NixOS or home-manager module. Users take `programs.opendeck` from `github:missmoode/nix-opendeck`, add `<plugin>.udev` to `services.udev.packages`, declare the `touchbar` group and turn `hardware.apple.touchBar.enable` off (see README.org).

@@ -1,9 +1,10 @@
 {
   lib,
-  rustPlatform,
+  callPackage,
+  mkRustOpenDeckPlugin,
 }:
 
-rustPlatform.buildRustPackage {
+mkRustOpenDeckPlugin (finalAttrs: {
   pname = "opendeck-touchbar";
   version = "0.1.0";
 
@@ -13,18 +14,22 @@ rustPlatform.buildRustPackage {
       ../Cargo.toml
       ../Cargo.lock
       ../src
-      ../manifest.json
       ../assets
     ];
   };
 
   cargoLock.lockFile = ../Cargo.lock;
 
+  pluginId = "opendeck-touchbar.sdPlugin";
+  binaryName = "opendeck-touchbar";
+  binaryInstallPath = "opendeck-touchbar";
+  licenseFiles = null;
+
+  udevRules."70-opendeck-touchbar.rules" = callPackage ./udev-rules.nix { };
+
   postInstall = ''
-    plugin=$out/share/opendeck-touchbar/opendeck-touchbar.sdPlugin
-    mkdir -p $plugin
-    cp -r manifest.json assets $plugin/
-    cp $out/bin/opendeck-touchbar $plugin/opendeck-touchbar
+    mkdir -p $out/bin
+    ln -s $out/${finalAttrs.pluginId}/opendeck-touchbar $out/bin/opendeck-touchbar
   '';
 
   meta = {
@@ -33,4 +38,4 @@ rustPlatform.buildRustPackage {
     platforms = lib.platforms.linux;
     mainProgram = "opendeck-touchbar";
   };
-}
+})
