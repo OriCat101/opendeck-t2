@@ -1,0 +1,82 @@
+#+title: opendeck-touchbar
+
+An [[https://github.com/nekename/OpenDeck][OpenDeck]] device plugin that turns the MacBook Touch Bar into a deck on Asahi Linux. OpenDeck key images are drawn on the bar and touches become key presses.
+
+The plugin owns the Touch Bar directly and *replaces tiny-dfr*: there is no function row, and the bar is blank while OpenDeck is not running.
+
+* Status
+
+Early. Developed and tested on a MacBookPro17,1 (M1 13") running NixOS.
+
+- Works: drawing, touch input, running without root, connecting to OpenDeck as a 1x16 key device.
+- Untested: the NixOS module, brightness and idle dimming, wake from suspend, other Touch Bar models (M2 13", Intel T2 Macs).
+
+* How it works
+
+- Display: the =adp= DRM card (60x2008, portrait) is driven with a dumb buffer; drawing is rotated to a 2008x60 landscape bar.
+- Touch: the =apple_z2= multitouch device is read through evdev and mapped to 16 equal key cells.
+- Backlight: set from OpenDeck's brightness; the bar dims after 30 s without touch and turns off after 60 s (the panel is OLED). The first touch on a dark bar only wakes it.
+
+* Requirements
+
+- An Apple Silicon MacBook Pro with a Touch Bar, running Asahi Linux.
+- Nix with flakes.
+- tiny-dfr stopped or disabled: only one program can own the Touch Bar display.
+
+* Try it without installing
+
+This lasts until the next reboot. Device numbers may differ on your machine; check =/sys/class/drm= and =/proc/bus/input/devices=.
+
+#+begin_src sh
+sudo systemctl stop tiny-dfr
+sudo chown $USER /dev/dri/card2 /dev/input/event3 /sys/class/backlight/228600000.dsi.0/brightness
+
+nix run .#opendeck-touchbar -- --demo
+#+end_src
+
+The demo draws 16 numbered keys (0 in green at the left end, 15 in red at the right) and prints =down N= / =up N= for touches. If the bar is upside down, set =OPENDECK_TOUCHBAR_FLIP=1=.
+
+Then, with OpenDeck:
+
+#+begin_src sh
+nix run .#install    # copies the plugin to ~/.config/opendeck/plugins
+nix run .#opendeck
+#+end_src
+
+A "Touch Bar" device with 1x16 keys should appear. =sudo systemctl start tiny-dfr= brings the function row back.
+
+* NixOS
+
+Add the flake as an input, import its module and give your user access:
+
+#+begin_src nix
+{
+  imports = [ inputs.opendeck-touchbar.nixosModules.default ];
+
+  hardware.opendeckTouchBar = {
+    enable = true;
+    users = [ "alice" ];
+  };
+
+  hardware.apple.touchBar.enable = false; # tiny-dfr
+}
+#+end_src
+
+The module adds a =touchbar= group with access to the display, the touch device and the backlight, and keeps the compositor away from the Touch Bar (the udev seat rules tiny-dfr normally ships). Log out and back in after rebuilding.
+
+The plugin itself still has to be copied into OpenDeck's plugin directory with =nix run .#install=: OpenDeck changes the binary's permissions on start, so a link into the Nix store does not work.
+
+** OpenDeck on aarch64
+
+=.#opendeck= builds OpenDeck from [[https://github.com/Kitt3120/opendeck-nix][Kitt3120/opendeck-nix]] for aarch64 against this flake's nixpkgs. Building it against an older nixpkgs than your system's makes its webview abort with =Could not create default EGL display=.
+
+* Development
+
+#+begin_src sh
+nix build .#opendeck-touchbar
+nix develop -c cargo clippy --all-targets
+nix fmt            # rustfmt + nixfmt through treefmt
+nix flake check    # fails on unformatted code
+#+end_src
+
+Plugin logs are in =~/.local/share/opendeck/logs/plugins/opendeck-touchbar.sdPlugin.log=.
