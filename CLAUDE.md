@@ -15,6 +15,7 @@ OpenDeck device plugin that turns the MacBook Touch Bar into a deck on Asahi Lin
   - Images are fitted into the canvas keeping their proportions (contain), on all devices. 1x1 images fill the canvas: OpenDeck's "solid colour" button stores a 1x1 image override, not a background colour.
   - Picked images are stored with their own proportions (fitted into 654x288) instead of letterboxed into 288x288. Images picked before the patch keep their baked-in bars and must be picked again.
   - OK/alert overlays are drawn square.
+  - The action list sidebar gets `shrink-0`: the Touch Bar's key row is about 5000 px wide and would otherwise squeeze it. nix-opendeck's patch 0005 touches the same file (`ActionList.svelte`); ours applies on top with an offset.
   - To change the patch: copy the touched files from the OpenDeck source in the Nix store, edit, regenerate with `git diff --no-index`, and check with `git apply --check`.
 - The `opendeck` input's nixpkgs must follow ours/the system's: the webview aborts with `Could not create default EGL display: EGL_BAD_PARAMETER` when its glibc is older than the system Mesa's (seen with an older pin).
 - OpenDeck's panic at `src/main.rs:271` on startup is its update check hitting the GitHub rate limit; harmless.
