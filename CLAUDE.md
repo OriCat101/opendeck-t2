@@ -10,7 +10,12 @@ OpenDeck device plugin that turns the MacBook Touch Bar into a deck on Asahi Lin
 - The udev rules output (the permanent form of that access) is tested and works.
 - Not yet tested: backlight/idle dimming behaviour, wake from suspend.
 - OpenDeck comes from `github:missmoode/nix-opendeck` (patched to load plugins from the Nix store; also provides the home-manager module). It builds and runs on aarch64 (2.14.2), and the plugin loads through its home-manager module as a store symlink (confirmed on yuriBook).
-- `.#opendeck` is nix-opendeck's core plus our frontend patch (`nix/opendeck.nix`, two `substituteInPlace` calls): keys of `tb-` devices render on a 327x144 canvas (3x the 109x48 button) with the icon kept square, so background colours fill the button. OpenDeck's "solid colour" button stores a 1x1 image override rather than a background colour, so 1x1 images are stretched over the whole canvas. Users opt in with `programs.opendeck.package`. Not yet verified on hardware.
+- `.#opendeck` is nix-opendeck's core plus our frontend patch (`nix/patches/opendeck-wide-keys.patch`, a git diff against OpenDeck's source, applied in `nix/opendeck.nix`). Users opt in with `programs.opendeck.package`. What it does:
+  - Keys of `tb-` devices render on a 327x144 canvas (3x the 109x48 button). Verified on hardware.
+  - Images are fitted into the canvas keeping their proportions (contain), on all devices. 1x1 images fill the canvas: OpenDeck's "solid colour" button stores a 1x1 image override, not a background colour.
+  - Picked images are stored with their own proportions (fitted into 654x288) instead of letterboxed into 288x288. Images picked before the patch keep their baked-in bars and must be picked again.
+  - OK/alert overlays are drawn square.
+  - To change the patch: copy the touched files from the OpenDeck source in the Nix store, edit, regenerate with `git diff --no-index`, and check with `git apply --check`.
 - The `opendeck` input's nixpkgs must follow ours/the system's: the webview aborts with `Could not create default EGL display: EGL_BAD_PARAMETER` when its glibc is older than the system Mesa's (seen with an older pin).
 - OpenDeck's panic at `src/main.rs:271` on startup is its update check hitting the GitHub rate limit; harmless.
 
@@ -53,5 +58,5 @@ OpenDeck device plugin that turns the MacBook Touch Bar into a deck on Asahi Lin
 - `src/layout.rs` key grid (`COLS = 16`, one row); `src/demo.rs` hardware test; `src/plugin.rs` OpenDeck glue.
 - `assets/` holds `manifest.json` and the icon; its contents become the root of the plugin directory.
 - `nix/package.nix` builds the plugin with nix-opendeck's `mkRustOpenDeckPlugin`: output `$out/opendeck-touchbar.sdPlugin/` (plus a `bin/` link for `--demo`), `passthru.pluginId`, and `passthru.udev` from `nix/udev-rules.nix`.
-- `nix/opendeck.nix` wraps a patched `opendeck-core` with nix-opendeck's `wrapOpenDeck` (starterpack bundled, like upstream's default).
+- `nix/opendeck.nix` wraps an `opendeck-core` patched with `nix/patches/opendeck-wide-keys.patch` with nix-opendeck's `wrapOpenDeck` (starterpack bundled, like upstream's default).
 - This repo ships no NixOS or home-manager module. Users take `programs.opendeck` from `github:missmoode/nix-opendeck`, add `<plugin>.udev` to `services.udev.packages`, declare the `touchbar` group and turn `hardware.apple.touchBar.enable` off (see README.org).

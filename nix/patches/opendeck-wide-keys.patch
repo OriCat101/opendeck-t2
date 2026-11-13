@@ -1,0 +1,98 @@
+Subject: Render Touch Bar keys wide and fit images without distortion
+
+Keys of tb- devices get a 327x144 canvas (the Touch Bar buttons are 109x48).
+Images are fitted into the canvas keeping their proportions, uploaded images
+are stored with their own proportions instead of letterboxed into a square,
+and the OK/alert overlays stay square.
+
+diff --git a/src/components/Key.svelte b/src/components/Key.svelte
+index 305de1e..3b5d0f8 100644
+--- a/src/components/Key.svelte
++++ b/src/components/Key.svelte
+@@ -151,7 +151,7 @@
+ 	let lock = new CanvasLock();
+ 	export let size = 144;
+ 	// Canvas resolution defaults to a square `size`, but rectangular controllers (e.g. the Neo's infobar) can override this.
+-	export let width: number = size;
++	export let width: number = context?.device.startsWith("tb-") ? 327 : size;
+ 	export let height: number = size;
+ 	$: (async () => {
+ 		const sl = structuredClone(slot);
+diff --git a/src/lib/rendererHelper.ts b/src/lib/rendererHelper.ts
+index c8cc024..ef27e3b 100644
+--- a/src/lib/rendererHelper.ts
++++ b/src/lib/rendererHelper.ts
+@@ -95,8 +95,11 @@ export async function renderImage(
+ 		// Draw image
+ 		context.imageSmoothingQuality = "high";
+ 		const imageScale = Math.max(10, state.image_scale || 100) / 100;
+-		const xScaled = canvas.width * imageScale;
+-		const yScaled = canvas.height * imageScale;
++		// Fit the image into the canvas without distorting it. Solid colours (1x1) and images without an intrinsic size fill the canvas.
++		const { naturalWidth, naturalHeight } = image;
++		const fit = naturalWidth > 1 && naturalHeight > 0 ? Math.min(canvas.width / naturalWidth, canvas.height / naturalHeight) : 0;
++		const xScaled = (fit ? naturalWidth * fit : canvas.width) * imageScale;
++		const yScaled = (fit ? naturalHeight * fit : canvas.height) * imageScale;
+ 		const xOffset = (canvas.width - xScaled) / 2;
+ 		const yOffset = (canvas.height - yScaled) / 2;
+ 		context.drawImage(image, xOffset, yOffset, xScaled, yScaled);
+@@ -149,7 +152,8 @@ export async function renderImage(
+ 		await new Promise((resolve) => {
+ 			okImage.onload = resolve;
+ 		});
+-		context.drawImage(okImage, 0, 0, canvas.width, canvas.height);
++		const side = Math.min(canvas.width, canvas.height);
++		context.drawImage(okImage, (canvas.width - side) / 2, (canvas.height - side) / 2, side, side);
+ 	}
+ 
+ 	if (showAlert) {
+@@ -159,7 +163,8 @@ export async function renderImage(
+ 		await new Promise((resolve) => {
+ 			alertImage.onload = resolve;
+ 		});
+-		context.drawImage(alertImage, 0, 0, canvas.width, canvas.height);
++		const side = Math.min(canvas.width, canvas.height);
++		context.drawImage(alertImage, (canvas.width - side) / 2, (canvas.height - side) / 2, side, side);
+ 	}
+ 
+ 	// Make the image smaller while the button is pressed.
+@@ -183,8 +188,6 @@ export async function renderImage(
+ 
+ export async function resizeImage(source: string): Promise<string | undefined> {
+ 	const canvas = document.createElement("canvas");
+-	canvas.width = 288;
+-	canvas.height = 288;
+ 	const context = canvas.getContext("2d");
+ 	if (!context) return;
+ 
+@@ -192,24 +195,16 @@ export async function resizeImage(source: string): Promise<string | undefined> {
+ 	image.crossOrigin = "anonymous";
+ 	image.src = source;
+ 	await new Promise((resolve) => (image.onload = resolve));
++	if (!image.width || !image.height) return;
+ 
+-	let xOffset = 0,
+-		yOffset = 0;
+-	let xScaled = canvas.width,
+-		yScaled = canvas.height;
+-	if (image.width > image.height) {
+-		const ratio = image.height / image.width;
+-		yScaled = canvas.height * ratio;
+-		yOffset = (canvas.height - yScaled) / 2;
+-	} else if (image.width < image.height) {
+-		const ratio = image.width / image.height;
+-		xScaled = canvas.width * ratio;
+-		xOffset = (canvas.width - xScaled) / 2;
+-	}
++	// Keep the image's proportions so that non-square keys can use them; renderImage fits it into the key.
++	const ratio = Math.min(654 / image.width, 288 / image.height);
++	canvas.width = Math.max(1, Math.round(image.width * ratio));
++	canvas.height = Math.max(1, Math.round(image.height * ratio));
+ 
+ 	context.imageSmoothingQuality = "high";
+ 	context.clearRect(0, 0, canvas.width, canvas.height);
+-	context.drawImage(image, xOffset, yOffset, xScaled, yScaled);
++	context.drawImage(image, 0, 0, canvas.width, canvas.height);
+ 
+ 	return canvas.toDataURL();
+ }

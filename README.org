@@ -114,7 +114,9 @@ programs.opendeck.package = inputs.opendeck-touchbar.packages.${pkgs.stdenv.host
 
 This builds OpenDeck locally. In the OpenDeck window the Touch Bar's keys are then shown wide as well. Without the patch everything still works, with square images.
 
-The patch is a stopgap: it hardcodes the Touch Bar's device namespace and key size in OpenDeck's frontend. It should probably be upstreamed at some point, as a way for device plugins to tell OpenDeck their key size when registering a device.
+Pictures you pick for a key keep their proportions and are shown whole, so a picture spans the full key only if it is about as wide as the key (2.27:1). Pictures picked before switching to the patched OpenDeck were stored as squares with bars; pick them again. Images drawn by other plugins stay square.
+
+The patch (=nix/patches/opendeck-wide-keys.patch=) is a stopgap: it hardcodes the Touch Bar's device namespace and key size in OpenDeck's frontend. It should probably be upstreamed at some point, as a way for device plugins to tell OpenDeck their key size when registering a device.
 
 ** With an unpatched OpenDeck
 

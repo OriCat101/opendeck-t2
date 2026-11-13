@@ -9,16 +9,6 @@ wrapOpenDeck {
   pname = "opendeck";
   inherit plugins;
   package = opendeck-core.overrideAttrs (old: {
-    postPatch = old.postPatch + ''
-      substituteInPlace src/components/Key.svelte \
-        --replace-fail \
-        'export let width: number = size;' \
-        'export let width: number = context?.device.startsWith("tb-") ? 327 : size;'
-
-      substituteInPlace src/lib/rendererHelper.ts \
-        --replace-fail \
-        'const xScaled = canvas.width * imageScale;' \
-        'const xScaled = (slotContext?.device.startsWith("tb-") && image.naturalWidth > 1 ? canvas.height : canvas.width) * imageScale;'
-    '';
+    patches = old.patches ++ [ ./patches/opendeck-wide-keys.patch ];
   });
 }
