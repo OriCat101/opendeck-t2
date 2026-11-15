@@ -56,7 +56,7 @@ OpenDeck device plugin that turns the MacBook Touch Bar into a deck on Asahi Lin
 
 ## Code map
 
-- `src/bar/display.rs` DRM setup and rotated drawing; `src/bar/touch.rs` evdev slots to touch events; `src/bar/backlight.rs`; `src/bar/activity.rs` runs a Wayland client thread (`ext-idle-notify-v1`, 1 s timeout, `get_input_idle_notification` on v2) and reports `resumed`/`idled` through `Bar::set_input_active()`; `src/bar/mod.rs` the `Bar` (keys drawn as tiny-dfr style rounded buttons with press highlight, brightness, idle power) and `start()` which yields `KeyEvent`s.
+- `src/bar/display.rs` DRM setup and rotated drawing; `src/bar/touch.rs` evdev slots to touch events; `src/bar/backlight.rs`; `src/bar/activity.rs` runs a Wayland client thread (`ext-idle-notify-v1`, 1 s timeout, `get_input_idle_notification` on v2) and reports `resumed`/`idled` through `Bar::set_input_active()`; `src/bar/mod.rs` the `Bar` (keys drawn as tiny-dfr style rounded buttons with press highlight, brightness, idle power) and `start()` which yields `KeyEvent`s. Drawing only writes the buffer; a presenter task flushes once changes have settled for 20 ms (150 ms at most), so a new layer (OpenDeck sends a clear plus one message per key) appears in one step. Presses flush at once. Verified on hardware.
 - `src/layout.rs` key grid (`COLS = 16`, one row); `src/demo.rs` hardware test; `src/plugin.rs` OpenDeck glue.
 - `assets/` holds `manifest.json` and the icon; its contents become the root of the plugin directory.
 - `nix/package.nix` builds the plugin with nix-opendeck's `mkRustOpenDeckPlugin`: output `$out/opendeck-touchbar.sdPlugin/` (plus a `bin/` link for `--demo`), `passthru.pluginId`, and `passthru.udev` from `nix/udev-rules.nix`.

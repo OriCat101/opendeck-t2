@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use image::RgbImage;
 use image::imageops::{self, FilterType};
+use tokio::sync::Notify;
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 
 use crate::layout::Layout;
@@ -20,6 +21,12 @@ use touch::{Digitizer, Touch};
 const DIM_AFTER: Duration = Duration::from_secs(30);
 const OFF_AFTER: Duration = Duration::from_secs(60);
 const DIMMED_LEVEL: u32 = 1;
+
+/// Drawn keys are presented once no further change arrived for SETTLE, at the latest
+/// MAX_HOLD after the first one: OpenDeck sends a new layer as a clear plus one message per key.
+const SETTLE: Duration = Duration::from_millis(20);
+const MAX_HOLD: Duration = Duration::from_millis(150);
+const PRESENT_POLL: Duration = Duration::from_millis(5);
 
 const SPACING: u32 = 16;
 const INSET: u32 = 6;
@@ -40,6 +47,15 @@ enum Power {
     Off,
 }
 
+/// Drawn but not yet presented: logical x range and when it changed.
+struct Pending {
+    x0: u32,
+    x1: u32,
+    since: Instant,
+    last: Instant,
+    updates: u32,
+}
+
 pub struct Bar {
     display: Display,
     backlight: Option<Backlight>,
@@ -53,6 +69,8 @@ pub struct Bar {
     last_active: Instant,
     wake_on_input: bool,
     input_active: bool,
+    pending: Option<Pending>,
+    changed: Arc<Notify>,
 }
 
 pub type SharedBar = Arc<Mutex<Bar>>;
@@ -80,8 +98,11 @@ impl Bar {
             last_active: Instant::now(),
             wake_on_input: true,
             input_active: false,
+            pending: None,
+            changed: Arc::new(Notify::new()),
         };
         bar.clear_all()?;
+        bar.flush()?;
         bar.apply(Power::Active);
         Ok(bar)
     }
@@ -122,8 +143,50 @@ impl Bar {
 
     pub fn clear_all(&mut self) -> Result<()> {
         self.keys.fill(None);
-        self.display
-            .draw(0, 0, self.layout.width, self.layout.height, |_, _| [0; 3])
+        let (w, h) = (self.layout.width, self.layout.height);
+        self.display.draw(0, 0, w, h, |_, _| [0; 3])?;
+        self.mark(0, w);
+        Ok(())
+    }
+
+    fn mark(&mut self, x: u32, w: u32) {
+        let now = Instant::now();
+        let pending = self.pending.get_or_insert(Pending {
+            x0: x,
+            x1: x + w,
+            since: now,
+            last: now,
+            updates: 0,
+        });
+        pending.x0 = pending.x0.min(x);
+        pending.x1 = pending.x1.max(x + w);
+        pending.last = now;
+        pending.updates += 1;
+        self.changed.notify_one();
+    }
+
+    /// Present everything drawn since the last flush.
+    pub fn flush(&mut self) -> Result<()> {
+        let Some(pending) = self.pending.take() else {
+            return Ok(());
+        };
+        let start = Instant::now();
+        self.display.flush(pending.x0, pending.x1 - pending.x0)?;
+        log::debug!(
+            "presented {} updates collected over {:?}, flush took {:?}",
+            pending.updates,
+            pending.last - pending.since,
+            start.elapsed()
+        );
+        Ok(())
+    }
+
+    /// Flush if the pending changes have settled; false while they should still be held.
+    fn flush_if_due(&mut self) -> Result<bool> {
+        match &self.pending {
+            Some(p) if p.last.elapsed() < SETTLE && p.since.elapsed() < MAX_HOLD => Ok(false),
+            _ => self.flush().map(|()| true),
+        }
     }
 
     pub fn set_pressed(&mut self, key: u8, pressed: bool) -> Result<()> {
@@ -131,7 +194,8 @@ impl Bar {
             return Ok(());
         }
         self.pressed[key as usize] = pressed;
-        self.render(key)
+        self.render(key)?;
+        self.flush()
     }
 
     fn button_size(&self, cell_width: u32) -> (u32, u32) {
@@ -146,7 +210,9 @@ impl Bar {
         let (x, w) = self.layout.cell(key);
         let h = self.layout.height;
         let Some(image) = &self.keys[key as usize] else {
-            return self.display.draw(x, 0, w, h, |_, _| [0; 3]);
+            self.display.draw(x, 0, w, h, |_, _| [0; 3])?;
+            self.mark(x, w);
+            return Ok(());
         };
         let fill = if self.pressed[key as usize] {
             FILL_PRESSED
@@ -171,7 +237,9 @@ impl Bar {
                 color = image.get_pixel(px - ix, py - iy).0.map(|v| v.max(fill));
             }
             color.map(|v| (v as f32 * coverage) as u8)
-        })
+        })?;
+        self.mark(x, w);
+        Ok(())
     }
 
     /// Brightness as a percentage.
@@ -234,7 +302,7 @@ impl Bar {
     }
 
     pub fn shutdown(&mut self) {
-        if let Err(e) = self.clear_all() {
+        if let Err(e) = self.clear_all().and_then(|()| self.flush()) {
             log::warn!("clearing the Touch Bar failed: {e:#}");
         }
         self.apply(Power::Off);
@@ -302,6 +370,25 @@ pub fn start(bar: Bar) -> Result<(SharedBar, UnboundedReceiver<KeyEvent>)> {
         loop {
             interval.tick().await;
             tick_bar.lock().unwrap().tick();
+        }
+    });
+
+    let present_bar = bar.clone();
+    let changed = present_bar.lock().unwrap().changed.clone();
+    tokio::spawn(async move {
+        loop {
+            changed.notified().await;
+            loop {
+                tokio::time::sleep(PRESENT_POLL).await;
+                match present_bar.lock().unwrap().flush_if_due() {
+                    Ok(false) => {}
+                    Ok(true) => break,
+                    Err(e) => {
+                        log::warn!("presenting the Touch Bar failed: {e:#}");
+                        break;
+                    }
+                }
+            }
         }
     });
 

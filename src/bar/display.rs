@@ -196,7 +196,8 @@ impl Display {
         }
     }
 
-    /// Paint the logical rectangle at (x0, y0) of size w x h with RGB pixels from `pixel`.
+    /// Write RGB pixels from `pixel` into the logical rectangle at (x0, y0) of size w x h.
+    /// Nothing reaches the panel until `flush`.
     pub fn draw(
         &mut self,
         x0: u32,
@@ -212,19 +213,27 @@ impl Display {
         }
         let pitch = self.db.pitch() as usize;
         let to_fb = self.to_fb();
-        let (a, b) = (to_fb(x0, y0), to_fb(x0 + w - 1, y0 + h - 1));
-        {
-            let mut map = self.card.map_dumb_buffer(&mut self.db)?;
-            let buf: &mut [u8] = map.as_mut();
-            for dy in 0..h {
-                for dx in 0..w {
-                    let [r, g, b] = pixel(dx, dy);
-                    let (fx, fy) = to_fb(x0 + dx, y0 + dy);
-                    let off = fy as usize * pitch + fx as usize * 4;
-                    buf[off..off + 4].copy_from_slice(&[b, g, r, 0]);
-                }
+        let mut map = self.card.map_dumb_buffer(&mut self.db)?;
+        let buf: &mut [u8] = map.as_mut();
+        for dy in 0..h {
+            for dx in 0..w {
+                let [r, g, b] = pixel(dx, dy);
+                let (fx, fy) = to_fb(x0 + dx, y0 + dy);
+                let off = fy as usize * pitch + fx as usize * 4;
+                buf[off..off + 4].copy_from_slice(&[b, g, r, 0]);
             }
         }
+        Ok(())
+    }
+
+    /// Present the full-height logical strip starting at x0 of width w.
+    pub fn flush(&self, x0: u32, w: u32) -> Result<()> {
+        let w = w.min(self.long.saturating_sub(x0));
+        if w == 0 {
+            return Ok(());
+        }
+        let to_fb = self.to_fb();
+        let (a, b) = (to_fb(x0, 0), to_fb(x0 + w - 1, self.short - 1));
         let clip = ClipRect::new(
             a.0.min(b.0) as u16,
             a.1.min(b.1) as u16,

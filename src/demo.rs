@@ -67,6 +67,7 @@ pub async fn run() -> Result<()> {
     for key in 0..layout.cols {
         bar.set_key(key, &key_image(key, layout.cols))?;
     }
+    bar.flush()?;
     let (bar, mut keys) = bar::start(bar)?;
     println!("touch the keys; Ctrl-C to quit");
     loop {
