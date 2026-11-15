@@ -16,7 +16,7 @@ Early. Developed and tested on a MacBookPro17,1 (M1 13") running NixOS.
 
 - Display: the =adp= DRM card (60x2008, portrait) is driven with a dumb buffer; drawing is rotated to a 2008x60 landscape bar.
 - Touch: the =apple_z2= multitouch device is read through evdev and mapped to 16 equal key cells; each cell shows one rounded button.
-- Backlight: set from OpenDeck's brightness; the bar dims after 30 s without touch and turns off after 60 s (the panel is OLED). The first touch on a dark bar only wakes it. OpenDeck's own device sleep timeout does not blank the bar; the plugin keeps to its own timing and wakes OpenDeck when the bar is in use. Typing or using the trackpad (or any other keyboard or mouse) also wakes the bar and keeps it on; the settings button next to the plugin in OpenDeck's plugin list switches that off and on again (there is no settings window, the button is the switch, and the bar lights up to confirm).
+- Backlight: follows the screen brightness, scaled by OpenDeck's brightness setting (100 % matches the screen); the bar dims after 30 s without touch and turns off after 60 s (the panel is OLED). The first touch on a dark bar only wakes it. OpenDeck's own device sleep timeout does not blank the bar; the plugin keeps to its own timing and wakes OpenDeck when the bar is in use. Typing or using the trackpad (or any other keyboard or mouse) also wakes the bar and keeps it on; the settings button next to the plugin in OpenDeck's plugin list switches that off and on again (there is no settings window, the button is the switch, and the bar lights up to confirm).
 
 * Requirements
 

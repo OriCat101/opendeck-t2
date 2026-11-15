@@ -14,13 +14,14 @@ use tokio::sync::Notify;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use crate::layout::Layout;
-use backlight::Backlight;
+use backlight::{Backlight, Screen};
 use display::Display;
 use touch::{Digitizer, Touch};
 
 const DIM_AFTER: Duration = Duration::from_secs(30);
 const OFF_AFTER: Duration = Duration::from_secs(60);
 const DIMMED_LEVEL: u32 = 1;
+const SCREEN_POLL: Duration = Duration::from_millis(250);
 
 /// Drawn keys are presented once no further change arrived for SETTLE, at the latest
 /// MAX_HOLD after the first one: OpenDeck sends a new layer as a clear plus one message per key.
@@ -66,6 +67,10 @@ pub struct Bar {
     pressed: Vec<bool>,
     image_size: Option<(u32, u32)>,
     flip: bool,
+    screen: Option<Screen>,
+    screen_fraction: f32,
+    screen_failed: bool,
+    percent: u32,
     level: u32,
     power: Power,
     last_active: Instant,
@@ -88,7 +93,13 @@ impl Bar {
         let backlight = Backlight::open()
             .inspect_err(|e| log::warn!("backlight control unavailable: {e:#}"))
             .ok();
-        let level = backlight.as_ref().map_or(0, |b| b.max() / 2);
+        let screen = Screen::open()
+            .inspect_err(|e| log::info!("not following the screen brightness: {e:#}"))
+            .ok();
+        let screen_fraction = screen
+            .as_ref()
+            .and_then(|s| s.fraction().ok())
+            .unwrap_or(1.0);
         let layout = Layout::new(width, height);
         let mut bar = Self {
             display,
@@ -98,7 +109,11 @@ impl Bar {
             pressed: vec![false; layout.cols as usize],
             image_size: None,
             flip,
-            level,
+            screen,
+            screen_fraction,
+            screen_failed: false,
+            percent: 100,
+            level: 0,
             power: Power::Active,
             last_active: Instant::now(),
             wake_on_input: true,
@@ -111,6 +126,7 @@ impl Bar {
         };
         bar.clear_all()?;
         bar.flush()?;
+        bar.level = bar.target_level();
         bar.apply(Power::Active);
         Ok(bar)
     }
@@ -262,9 +278,43 @@ impl Bar {
             return;
         }
         self.host_asleep = false;
+        self.percent = percent.min(100) as u32;
+        self.update_level();
+    }
+
+    /// The host's percentage scaled by the screen brightness; never zero, off is idle's job.
+    fn target_level(&self) -> u32 {
         let max = self.backlight.as_ref().map_or(0, |b| b.max());
-        self.level = max * percent.min(100) as u32 / 100;
-        self.apply(self.power);
+        let level = max as f32 * self.percent as f32 / 100.0 * self.screen_fraction;
+        (level.round() as u32).clamp(max.min(1), max)
+    }
+
+    fn update_level(&mut self) {
+        let level = self.target_level();
+        if level != self.level {
+            self.level = level;
+            self.apply(self.power);
+        }
+    }
+
+    /// Pick up a changed screen brightness. Not activity: a dimmed or dark bar stays so.
+    pub fn sync_screen(&mut self) {
+        let Some(screen) = &self.screen else { return };
+        match screen.fraction() {
+            Ok(fraction) => {
+                self.screen_failed = false;
+                if fraction != self.screen_fraction {
+                    self.screen_fraction = fraction;
+                    self.update_level();
+                }
+            }
+            Err(e) => {
+                if !self.screen_failed {
+                    log::warn!("reading the screen brightness failed: {e:#}");
+                }
+                self.screen_failed = true;
+            }
+        }
     }
 
     fn wake_host(&mut self) {
@@ -399,6 +449,15 @@ pub fn start(bar: Bar) -> Result<(SharedBar, UnboundedReceiver<KeyEvent>)> {
         loop {
             interval.tick().await;
             tick_bar.lock().unwrap().tick();
+        }
+    });
+
+    let screen_bar = bar.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(SCREEN_POLL);
+        loop {
+            interval.tick().await;
+            screen_bar.lock().unwrap().sync_screen();
         }
     });
 
