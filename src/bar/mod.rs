@@ -11,7 +11,7 @@ use anyhow::Result;
 use image::RgbImage;
 use image::imageops::{self, FilterType};
 use tokio::sync::Notify;
-use tokio::sync::mpsc::{self, UnboundedReceiver};
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use crate::layout::Layout;
 use backlight::Backlight;
@@ -38,6 +38,8 @@ const FILL_PRESSED: u8 = 102;
 pub enum KeyEvent {
     Down(u8),
     Up(u8),
+    /// Not a key: the bar is in use while the host believes the device is asleep.
+    Wake,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -69,6 +71,9 @@ pub struct Bar {
     last_active: Instant,
     wake_on_input: bool,
     input_active: bool,
+    host_asleep: bool,
+    wake_sent: bool,
+    host: Option<UnboundedSender<KeyEvent>>,
     pending: Option<Pending>,
     changed: Arc<Notify>,
 }
@@ -98,6 +103,9 @@ impl Bar {
             last_active: Instant::now(),
             wake_on_input: true,
             input_active: false,
+            host_asleep: false,
+            wake_sent: false,
+            host: None,
             pending: None,
             changed: Arc::new(Notify::new()),
         };
@@ -242,11 +250,30 @@ impl Bar {
         Ok(())
     }
 
-    /// Brightness as a percentage.
+    /// Brightness as a percentage. Zero is how the host puts a device to sleep; the bar keeps
+    /// its own idle timing instead and wakes the host whenever it is in use.
     pub fn set_brightness(&mut self, percent: u8) {
+        if percent == 0 {
+            self.host_asleep = true;
+            self.wake_sent = false;
+            if self.power == Power::Active {
+                self.wake_host();
+            }
+            return;
+        }
+        self.host_asleep = false;
         let max = self.backlight.as_ref().map_or(0, |b| b.max());
         self.level = max * percent.min(100) as u32 / 100;
         self.apply(self.power);
+    }
+
+    fn wake_host(&mut self) {
+        if self.host_asleep
+            && !self.wake_sent
+            && let Some(host) = &self.host
+        {
+            self.wake_sent = host.send(KeyEvent::Wake).is_ok();
+        }
     }
 
     /// Note user activity; returns true if the bar was off and has just been woken.
@@ -256,6 +283,7 @@ impl Bar {
         if self.power != Power::Active {
             self.apply(Power::Active);
         }
+        self.wake_host();
         was_off
     }
 
@@ -338,6 +366,7 @@ pub fn start(bar: Bar) -> Result<(SharedBar, UnboundedReceiver<KeyEvent>)> {
     });
 
     let (key_tx, key_rx) = mpsc::unbounded_channel();
+    bar.lock().unwrap().host = Some(key_tx.clone());
     let touch_bar = bar.clone();
     tokio::spawn(async move {
         let mut held: HashMap<i32, u8> = HashMap::new();

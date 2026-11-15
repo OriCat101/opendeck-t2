@@ -78,6 +78,7 @@ pub async fn run() -> Result<()> {
                 match event {
                     KeyEvent::Down(key) => println!("down {key}"),
                     KeyEvent::Up(key) => println!("up {key}"),
+                    KeyEvent::Wake => {}
                 }
             }
         }

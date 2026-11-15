@@ -45,6 +45,9 @@ fn open_bar() -> Result<()> {
             let result = match event {
                 KeyEvent::Down(key) => device_plugin::key_down(DEVICE_ID.into(), key).await,
                 KeyEvent::Up(key) => device_plugin::key_up(DEVICE_ID.into(), key).await,
+                // Any device event wakes a sleeping OpenDeck device and is dropped; a key-up
+                // without a key-down does nothing on an awake one.
+                KeyEvent::Wake => device_plugin::key_up(DEVICE_ID.into(), 0).await,
             };
             if let Err(e) = result {
                 log::warn!("sending key event failed: {e}");
