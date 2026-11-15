@@ -1,3 +1,4 @@
+mod activity;
 mod backlight;
 mod display;
 mod touch;
@@ -50,6 +51,8 @@ pub struct Bar {
     level: u32,
     power: Power,
     last_active: Instant,
+    wake_on_input: bool,
+    input_active: bool,
 }
 
 pub type SharedBar = Arc<Mutex<Bar>>;
@@ -75,6 +78,8 @@ impl Bar {
             level,
             power: Power::Active,
             last_active: Instant::now(),
+            wake_on_input: true,
+            input_active: false,
         };
         bar.clear_all()?;
         bar.apply(Power::Active);
@@ -186,7 +191,29 @@ impl Bar {
         was_off
     }
 
+    pub fn wake_on_input(&self) -> bool {
+        self.wake_on_input
+    }
+
+    pub fn set_wake_on_input(&mut self, on: bool) {
+        self.wake_on_input = on;
+        if on && self.input_active {
+            self.activity();
+        }
+    }
+
+    /// Whether the keyboard or pointer is in use, which only counts while the setting is on.
+    pub fn set_input_active(&mut self, active: bool) {
+        self.input_active = active;
+        if self.wake_on_input {
+            self.activity();
+        }
+    }
+
     pub fn tick(&mut self) {
+        if self.wake_on_input && self.input_active {
+            self.last_active = Instant::now();
+        }
         let idle = self.last_active.elapsed();
         let target = if idle >= OFF_AFTER {
             Power::Off
@@ -277,6 +304,8 @@ pub fn start(bar: Bar) -> Result<(SharedBar, UnboundedReceiver<KeyEvent>)> {
             tick_bar.lock().unwrap().tick();
         }
     });
+
+    activity::watch(bar.clone());
 
     Ok((bar, key_rx))
 }

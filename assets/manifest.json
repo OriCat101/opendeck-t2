@@ -12,5 +12,6 @@
     "x86_64-unknown-linux-gnu": "opendeck-touchbar"
   },
   "Actions": [],
-  "DeviceNamespace": "tb"
+  "DeviceNamespace": "tb",
+  "HasSettingsInterface": true
 }

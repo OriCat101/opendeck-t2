@@ -4,8 +4,8 @@ use anyhow::{Result, anyhow};
 use data_url::DataUrl;
 use image::RgbImage;
 use openaction::global_events::{
-    GlobalEventHandler, SetBrightnessEvent, SetImageEvent, SystemDidWakeUpEvent,
-    set_global_event_handler,
+    DidReceiveGlobalSettingsEvent, GlobalEventHandler, SetBrightnessEvent, SetImageEvent,
+    ShowSettingsInterfaceEvent, SystemDidWakeUpEvent, set_global_event_handler,
 };
 use openaction::{OpenActionResult, async_trait, device_plugin};
 use tokio::signal::unix::{SignalKind, signal};
@@ -15,7 +15,14 @@ use crate::bar::{self, Bar, KeyEvent, SharedBar};
 /// Must start with the manifest's DeviceNamespace.
 const DEVICE_ID: &str = "tb-touchbar";
 
+const WAKE_ON_INPUT: &str = "wake_on_input";
+
 static BAR: OnceLock<SharedBar> = OnceLock::new();
+
+fn log_wake_on_input(on: bool) {
+    let state = if on { "on" } else { "off" };
+    log::info!("wake on keyboard/trackpad input: {state}");
+}
 
 struct Handler;
 
@@ -56,7 +63,38 @@ impl GlobalEventHandler for Handler {
             std::process::exit(1);
         }
         let cols = BAR.get().unwrap().lock().unwrap().layout().cols;
-        device_plugin::register_device(DEVICE_ID.into(), "Touch Bar".into(), 1, cols, 0, 0).await
+        device_plugin::register_device(DEVICE_ID.into(), "Touch Bar".into(), 1, cols, 0, 0).await?;
+        openaction::get_global_settings().await
+    }
+
+    async fn did_receive_global_settings(
+        &self,
+        event: DidReceiveGlobalSettingsEvent,
+    ) -> OpenActionResult<()> {
+        let Some(bar) = BAR.get() else { return Ok(()) };
+        let on = event.payload.settings[WAKE_ON_INPUT]
+            .as_bool()
+            .unwrap_or(true);
+        bar.lock().unwrap().set_wake_on_input(on);
+        log_wake_on_input(on);
+        Ok(())
+    }
+
+    /// There is no settings window: the settings button toggles the one setting.
+    async fn show_settings_interface(
+        &self,
+        _event: ShowSettingsInterfaceEvent,
+    ) -> OpenActionResult<()> {
+        let Some(bar) = BAR.get() else { return Ok(()) };
+        let on = {
+            let mut bar = bar.lock().unwrap();
+            let on = !bar.wake_on_input();
+            bar.set_wake_on_input(on);
+            bar.activity();
+            on
+        };
+        log_wake_on_input(on);
+        openaction::set_global_settings(serde_json::json!({ WAKE_ON_INPUT: on })).await
     }
 
     async fn device_plugin_set_image(&self, event: SetImageEvent) -> OpenActionResult<()> {
