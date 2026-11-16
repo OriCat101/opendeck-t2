@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow, bail};
 use drm::buffer::{Buffer, DrmFourcc};
-use drm::control::dumbbuffer::DumbBuffer;
+use drm::control::dumbbuffer::DumbMapping;
 use drm::control::{
     AtomicCommitFlags, ClipRect, Device as ControlDevice, Mode, ResourceHandle, atomic, connector,
     crtc, framebuffer, plane, property,
@@ -28,7 +28,8 @@ impl ControlDevice for Card {}
 /// landscape coordinates (long x short) and the rotation happens here.
 pub struct Display {
     card: Card,
-    db: DumbBuffer,
+    map: DumbMapping<'static>,
+    pitch: usize,
     fb: framebuffer::Handle,
     connector: connector::Handle,
     crtc: crtc::Handle,
@@ -120,10 +121,14 @@ impl Display {
         let db =
             card.create_dumb_buffer((short.next_multiple_of(64), long), DrmFourcc::Xrgb8888, 32)?;
         let fb = card.add_framebuffer(&db, 24, 32)?;
+        let pitch = db.pitch() as usize;
+        // Mapped once for the life of the process.
+        let map = card.map_dumb_buffer(Box::leak(Box::new(db)))?;
 
         let display = Self {
             card,
-            db,
+            map,
+            pitch,
             fb,
             connector: con.handle(),
             crtc,
@@ -198,32 +203,32 @@ impl Display {
 
     /// Write RGB pixels from `pixel` into the logical rectangle at (x0, y0) of size w x h.
     /// Nothing reaches the panel until `flush`.
-    pub fn draw(
-        &mut self,
-        x0: u32,
-        y0: u32,
-        w: u32,
-        h: u32,
-        pixel: impl Fn(u32, u32) -> [u8; 3],
-    ) -> Result<()> {
+    pub fn draw(&mut self, x0: u32, y0: u32, w: u32, h: u32, pixel: impl Fn(u32, u32) -> [u8; 3]) {
         let w = w.min(self.long.saturating_sub(x0));
         let h = h.min(self.short.saturating_sub(y0));
-        if w == 0 || h == 0 {
-            return Ok(());
-        }
-        let pitch = self.db.pitch() as usize;
-        let to_fb = self.to_fb();
-        let mut map = self.card.map_dumb_buffer(&mut self.db)?;
-        let buf: &mut [u8] = map.as_mut();
-        for dy in 0..h {
-            for dx in 0..w {
+        let (short, flip) = (self.short, self.flip);
+        for dx in 0..w {
+            let column = self.column(x0 + dx);
+            for dy in 0..h {
+                let y = y0 + dy;
+                let fx = if flip { y } else { short - 1 - y } as usize;
                 let [r, g, b] = pixel(dx, dy);
-                let (fx, fy) = to_fb(x0 + dx, y0 + dy);
-                let off = fy as usize * pitch + fx as usize * 4;
-                buf[off..off + 4].copy_from_slice(&[b, g, r, 0]);
+                column[fx * 4..][..4].copy_from_slice(&[b, g, r, 0]);
             }
         }
-        Ok(())
+    }
+
+    /// Blacken the full-height logical strip starting at x0 of width w.
+    pub fn clear(&mut self, x0: u32, w: u32) {
+        for x in x0..(x0 + w).min(self.long) {
+            self.column(x).fill(0);
+        }
+    }
+
+    /// The framebuffer row holding the logical column `x`.
+    fn column(&mut self, x: u32) -> &mut [u8] {
+        let row = if self.flip { self.long - 1 - x } else { x } as usize;
+        &mut self.map.as_mut()[row * self.pitch..][..self.short as usize * 4]
     }
 
     /// Present the full-height logical strip starting at x0 of width w.

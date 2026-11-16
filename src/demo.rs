@@ -65,7 +65,10 @@ pub async fn run() -> Result<()> {
     );
     bar.set_brightness(100);
     for key in 0..layout.cols {
-        bar.set_key(key, &key_image(key, layout.cols))?;
+        let image = key_image(key, layout.cols);
+        if let Some(size) = bar.fit_size(key, image.dimensions()) {
+            bar.set_key(key, bar::fit(&image, size));
+        }
     }
     bar.flush()?;
     let (bar, mut keys) = bar::start(bar)?;

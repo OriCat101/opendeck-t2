@@ -31,7 +31,7 @@ fn decode(url: &str) -> Result<RgbImage> {
     let (bytes, _) = url
         .decode_to_vec()
         .map_err(|e| anyhow!("invalid base64 in data URL: {e:?}"))?;
-    Ok(image::load_from_memory(&bytes)?.to_rgb8())
+    Ok(image::load_from_memory(&bytes)?.into_rgb8())
 }
 
 fn open_bar() -> Result<()> {
@@ -105,15 +105,19 @@ impl GlobalEventHandler for Handler {
         if event.controller.as_deref().is_some_and(|c| c != "Keypad") {
             return Ok(());
         }
-        let result = match (event.position, event.image) {
-            (Some(key), Some(url)) => {
-                decode(&url).and_then(|image| bar.lock().unwrap().set_key(key, &image))
-            }
+        match (event.position, event.image) {
+            (Some(key), Some(url)) => match decode(&url) {
+                Ok(image) => {
+                    let size = bar.lock().unwrap().fit_size(key, image.dimensions());
+                    if let Some(size) = size {
+                        let image = bar::fit(&image, size);
+                        bar.lock().unwrap().set_key(key, image);
+                    }
+                }
+                Err(e) => log::warn!("updating key image failed: {e:#}"),
+            },
             (Some(key), None) => bar.lock().unwrap().clear_key(key),
             (None, _) => bar.lock().unwrap().clear_all(),
-        };
-        if let Err(e) = result {
-            log::warn!("updating key image failed: {e:#}");
         }
         Ok(())
     }

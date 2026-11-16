@@ -17,4 +17,4 @@ openaction = "2.8"
 serde_json = "1"
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
-tokio ={ version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio ={ version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }

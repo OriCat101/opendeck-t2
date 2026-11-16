@@ -9,10 +9,16 @@ const NAMES: [&str; 3] = ["228600000.dsi.0", "display-pipe", "appletb_backlight"
 /// The main screen's backlight, which the Touch Bar's level follows.
 pub struct Screen {
     path: PathBuf,
+    notifier: PathBuf,
     max: u32,
 }
 
 impl Screen {
+    /// The file the kernel sends a sysfs notification on when the brightness changes.
+    pub fn notifier(&self) -> std::io::Result<File> {
+        File::open(&self.notifier)
+    }
+
     pub fn open() -> Result<Self> {
         let dir = fs::read_dir("/sys/class/backlight")?
             .filter_map(|e| e.ok())
@@ -32,6 +38,7 @@ impl Screen {
         log::info!("brightness follows {}", dir.display());
         Ok(Self {
             path: dir.join("brightness"),
+            notifier: dir.join("actual_brightness"),
             max,
         })
     }
